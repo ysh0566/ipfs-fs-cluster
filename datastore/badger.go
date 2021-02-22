@@ -1,4 +1,4 @@
-package consensus
+package datastore
 
 import (
 	"encoding/binary"
@@ -10,10 +10,10 @@ import (
 )
 
 var (
-	dbLogsPrefix     = []byte("logs")
-	dbLogsFirstIndex = []byte("logs_first")
-	dbLogsLastIndex  = []byte("logs_last")
-	dbConfPrefix     = []byte("conf")
+	dbLogsPrefix     = []byte("l") // log
+	dbLogsFirstIndex = []byte("l_first")
+	dbLogsLastIndex  = []byte("l_last")
+	dbConfPrefix     = []byte("c") // con
 	ErrNotFound      = errors.New("not found")
 )
 
@@ -30,7 +30,7 @@ func NewBadgerStore(path string) (*BadgerStore, error) {
 	return store, nil
 }
 
-func (s *BadgerStore) set(key []byte, val []byte) error {
+func (s *BadgerStore) setKey(key []byte, val []byte) error {
 	fmt.Println(string(key), string(val))
 	tx := s.db.NewTransaction(true)
 	if err := tx.Set(key, val); err != nil {
@@ -39,7 +39,7 @@ func (s *BadgerStore) set(key []byte, val []byte) error {
 	return tx.Commit()
 }
 
-func (s *BadgerStore) get(key []byte) ([]byte, error) {
+func (s *BadgerStore) getKey(key []byte) ([]byte, error) {
 	tx := s.db.NewTransaction(false)
 	defer tx.Discard()
 	item, err := tx.Get(key)
@@ -51,13 +51,13 @@ func (s *BadgerStore) get(key []byte) ([]byte, error) {
 
 func (s *BadgerStore) Set(key []byte, val []byte) error {
 	k := append(dbConfPrefix, key...)
-	return s.set(k, val)
+	return s.setKey(k, val)
 }
 
 func (s *BadgerStore) Get(key []byte) ([]byte, error) {
 
 	k := append(dbConfPrefix, key...)
-	if bs, err := s.get(k); err != nil && err == badger.ErrKeyNotFound {
+	if bs, err := s.getKey(k); err != nil && err == badger.ErrKeyNotFound {
 		return nil, ErrNotFound
 	} else {
 		return bs, err
@@ -79,7 +79,7 @@ func (s *BadgerStore) GetUint64(key []byte) (uint64, error) {
 }
 
 func (s *BadgerStore) FirstIndex() (uint64, error) {
-	if v, err := s.get(dbLogsFirstIndex); err == nil {
+	if v, err := s.getKey(dbLogsFirstIndex); err == nil {
 		return binary.LittleEndian.Uint64(v), nil
 
 	} else {
@@ -91,7 +91,7 @@ func (s *BadgerStore) FirstIndex() (uint64, error) {
 }
 
 func (s *BadgerStore) LastIndex() (uint64, error) {
-	if v, err := s.get(dbLogsLastIndex); err == nil {
+	if v, err := s.getKey(dbLogsLastIndex); err == nil {
 		return binary.LittleEndian.Uint64(v), nil
 
 	} else {
@@ -106,7 +106,7 @@ func (s *BadgerStore) GetLog(index uint64, log *raft.Log) error {
 	tmp := make([]byte, 8, 8)
 	binary.LittleEndian.PutUint64(tmp, index)
 	tmp = append(dbLogsPrefix, tmp...)
-	if bs, err := s.get(tmp); err == nil {
+	if bs, err := s.getKey(tmp); err == nil {
 		return json.Unmarshal(bs, log)
 	} else {
 		if err == badger.ErrKeyNotFound {
