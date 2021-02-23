@@ -33,7 +33,6 @@ func RunHttpServer() {
 				fmt.Println(string(b))
 				return nil
 			}
-			fmt.Println(response.Request.URL.Path)
 		}
 		return nil
 	}

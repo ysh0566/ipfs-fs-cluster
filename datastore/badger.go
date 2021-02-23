@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/hashicorp/raft"
+	"github.com/prometheus/common/log"
 )
 
 var (
@@ -116,13 +117,14 @@ func (s *BadgerStore) GetLog(index uint64, log *raft.Log) error {
 	}
 }
 
-func (s *BadgerStore) StoreLog(log *raft.Log) error {
+func (s *BadgerStore) StoreLog(l *raft.Log) error {
+	log.Info("StoreLog", l.Index)
 	tx := s.db.NewTransaction(true)
 	defer tx.Discard()
 	tmp := make([]byte, 8, 8)
-	binary.LittleEndian.PutUint64(tmp, log.Index)
+	binary.LittleEndian.PutUint64(tmp, l.Index)
 	tmp = append(dbLogsPrefix, tmp...)
-	bs, err := json.Marshal(log)
+	bs, err := json.Marshal(l)
 	if err != nil {
 		return err
 	}
@@ -130,31 +132,32 @@ func (s *BadgerStore) StoreLog(log *raft.Log) error {
 		return err
 	}
 	tmp = make([]byte, 8, 8)
-	binary.LittleEndian.PutUint64(tmp, log.Index)
+	binary.LittleEndian.PutUint64(tmp, l.Index)
 	if err := tx.Set(dbLogsLastIndex, tmp); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *BadgerStore) StoreLogs(logs []*raft.Log) error {
+func (s *BadgerStore) StoreLogs(ls []*raft.Log) error {
 	tx := s.db.NewTransaction(true)
 	defer tx.Discard()
 	tmp := make([]byte, 8, 8)
 	var max uint64
-	for _, log := range logs {
-		binary.LittleEndian.PutUint64(tmp, log.Index)
+	for _, l := range ls {
+		log.Info("StoreLogs", l.Index)
+		binary.LittleEndian.PutUint64(tmp, l.Index)
 		key := append(dbLogsPrefix, tmp...)
 
-		bs, err := json.Marshal(log)
+		bs, err := json.Marshal(l)
 		if err != nil {
 			return err
 		}
 		if err := tx.Set(key, bs); err != nil {
 			return err
 		}
-		if log.Index > max {
-			max = log.Index
+		if l.Index > max {
+			max = l.Index
 		}
 	}
 	tmp = make([]byte, 8, 8)
@@ -166,6 +169,7 @@ func (s *BadgerStore) StoreLogs(logs []*raft.Log) error {
 }
 
 func (s *BadgerStore) DeleteRange(min, max uint64) error {
+	log.Info("DeleteRange", min, max)
 	tx := s.db.NewTransaction(true)
 	defer tx.Discard()
 	tmp := make([]byte, 8, 8)

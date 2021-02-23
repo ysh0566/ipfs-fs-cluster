@@ -1,14 +1,16 @@
 package consensus
 
-type OpType string
+type OpType int
 
 const (
-	OpRm OpType = "OpRm"
-	OpMv OpType = "OpMv"
-	OpCp OpType = "OpCp"
+	OpRm OpType = iota
+	OpMv
+	OpCp
+	OpMkdir
 )
 
 type FsOperation struct {
-	Op     OpType
-	Params []string
+	Op     OpType   `json:"op"`
+	Params []string `json:"params"`
+	Root   string   `json:"root"`
 }

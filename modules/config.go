@@ -38,6 +38,7 @@ type Config = struct {
 		Peers    []string `json:"peers"`
 		LogLevel string   `default:"DEBUG" json:"log_level"`
 	} `json:"raft"`
+	Port int `json:"port"`
 }
 
 func InitConfig() Config {

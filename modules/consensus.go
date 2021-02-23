@@ -30,12 +30,12 @@ func DataStore(js Config) (*datastore.BadgerStore, error) {
 	return datastore.NewBadgerStore(js.DBPath)
 }
 
-func SnapshotStore() raft.SnapshotStore {
-	return raft.NewInmemSnapshotStore()
+func SnapshotStore() (raft.SnapshotStore, error) {
+	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm() raft.FSM {
-	return &consensus.Fsm{}
+func Fsm(store *datastore.BadgerStore) (raft.FSM, error) {
+	return consensus.NewFsm(store)
 }
 
 func Transport(n *network.Network) (raft.Transport, error) {
