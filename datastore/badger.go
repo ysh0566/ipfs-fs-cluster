@@ -15,6 +15,7 @@ var (
 	dbLogsFirstIndex = []byte("l_first")
 	dbLogsLastIndex  = []byte("l_last")
 	dbConfPrefix     = []byte("c") // con
+	dbState          = []byte("state")
 	ErrNotFound      = errors.New("not found")
 )
 
@@ -208,4 +209,19 @@ func (s *BadgerStore) DeleteRange(min, max uint64) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *BadgerStore) StoreState(hash string) error {
+	return s.setKey(dbState, []byte(hash))
+}
+
+func (s *BadgerStore) LoadState() (string, error) {
+	v, err := s.getKey(dbState)
+	if err != nil {
+		if err == badger.ErrKeyNotFound {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return string(v), err
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"github.com/hashicorp/raft"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus"
@@ -18,17 +17,12 @@ func T(fsm raft.FSM, clients *modules.Clients, config modules.Config) {
 	go func() {
 		ticker := time.NewTicker(time.Second * 10)
 		for range ticker.C {
-			fmt.Println(fsm2.Mfs.Root())
+			fmt.Println(fsm2.State.Root())
 		}
 	}()
 }
 
-func Context() context.Context {
-	return context.Background()
-}
-
 func main() {
-
 	var options = []fx.Option{
 		fx.Provide(modules.InitConfig),
 		fx.Provide(modules.NetConfig),
@@ -37,12 +31,13 @@ func main() {
 		fx.Provide(modules.DataStore),
 		fx.Provide(modules.SnapshotStore),
 		fx.Provide(modules.Fsm),
+		fx.Provide(modules.IpfsClient),
 		fx.Provide(modules.Transport),
 		fx.Provide(modules.Raft),
+		fx.Provide(modules.RpcClients),
+		fx.StopTimeout(time.Minute),
 		fx.Invoke(modules.RpcServer),
 		fx.Invoke(modules.Server2),
-		fx.Provide(modules.RpcClients),
-		fx.Provide(Context),
 		fx.Invoke(T),
 	}
 	app := New(options...)

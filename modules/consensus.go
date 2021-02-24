@@ -3,19 +3,28 @@ package modules
 import (
 	"context"
 	"github.com/hashicorp/raft"
+	httpapi "github.com/ipfs/go-ipfs-http-client"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	p2praft "github.com/libp2p/go-libp2p-raft"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
 	"github.com/ysh0566/ipfs-fs-cluster/network"
 	"github.com/ysh0566/ipfs-fs-cluster/rpc"
+	"go.uber.org/fx"
 	"google.golang.org/grpc"
 	"time"
 )
 
-const protocol = "/grpc/0.0.1"
-
-func Network(ctx context.Context, cfg *network.NetConfig) (*network.Network, error) {
+func Network(lc fx.Lifecycle, cfg *network.NetConfig) (*network.Network, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			cancel()
+			return nil
+		},
+	})
 	return network.NewNetwork(ctx, *cfg)
 }
 
@@ -34,8 +43,16 @@ func SnapshotStore() (raft.SnapshotStore, error) {
 	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm(store *datastore.BadgerStore) (raft.FSM, error) {
-	return consensus.NewFsm(store)
+func Fsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (raft.FSM, error) {
+	return consensus.NewFsm(store, api)
+}
+
+func IpfsClient(js Config) (*httpapi.HttpApi, error) {
+	addr, err := ma.NewMultiaddr(js.Ipfs)
+	if err != nil {
+		return nil, err
+	}
+	return httpapi.NewApi(addr)
 }
 
 func Transport(n *network.Network) (raft.Transport, error) {
