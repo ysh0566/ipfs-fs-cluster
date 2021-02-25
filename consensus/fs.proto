@@ -1,0 +1,55 @@
+// protoc --gogo_out=. --go-grpc_out=.  consensus/rpc/fs.proto
+syntax = "proto3";
+option go_package = "";
+package rpc;
+// The greeting service definition.
+service FileOp {
+  // Sends a greeting
+  rpc Cp (DirPath) returns (Empty) {}
+  rpc Mv (DirPath) returns (Empty) {}
+  rpc Rm (Path) returns (Empty) {}
+  rpc MkDir (Path) returns (Empty) {}
+}
+
+message Ctx {
+  string pre = 1;
+  string next = 2;
+}
+
+message Empty{}
+
+
+message DirPath {
+  string dir = 1;
+  string path = 2;
+  Ctx ctx = 3;
+}
+
+message Path {
+  string path = 1;
+  Ctx ctx = 2;
+}
+
+message Nodes {
+  message Node {
+    string name = 1;
+    int64 type = 2;
+    int64 size = 3;
+    string hash = 4;
+  }
+  repeated Node node = 1;
+}
+
+message Operation {
+  enum Code {
+    CP = 0;
+    MV = 1;
+    RM = 2;
+    MKDIR = 3;
+    Ls = 4;
+  };
+  Code code = 1;
+  repeated string params = 2;
+  Ctx ctx = 3;
+}
+

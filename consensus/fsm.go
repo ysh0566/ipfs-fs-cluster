@@ -2,8 +2,7 @@ package consensus
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-cid"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
@@ -11,6 +10,7 @@ import (
 	"github.com/ipfs/go-unixfs"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
 	"io"
+	"strings"
 )
 
 type Fsm struct {
@@ -21,19 +21,30 @@ type Fsm struct {
 }
 
 func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
-	r, err := mfs.NewRoot(context.Background(), api.Dag(), unixfs.EmptyDirNode(), func(ctx context.Context, cid cid.Cid) error {
-		return nil
-	})
+	s, err := store.LoadState()
+	state := &FileTreeState{
+		dag:   api.Dag(),
+		store: store,
+		ctx:   context.Background(),
+	}
 	if err != nil {
-		return nil, err
+		if err != datastore.ErrNotFound {
+			return nil, err
+		} else {
+			r, _ := mfs.NewRoot(context.Background(), api.Dag(), unixfs.EmptyDirNode(), func(ctx context.Context, cid cid.Cid) error {
+				return nil
+			})
+			state.root = r
+		}
+	} else {
+		err := state.Unmarshal(strings.NewReader(s))
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Fsm{
-		client: api,
-		State: &FileTreeState{
-			dag:   api.Dag(),
-			root:  r,
-			store: store,
-		},
+		client:       api,
+		State:        state,
 		ctx:          context.Background(),
 		inconsistent: false,
 	}, nil
@@ -41,31 +52,31 @@ func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
 
 func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var err error
-	defer func() {
-		if err != nil {
-			fmt.Println(err)
-		}
-	}()
-	op := FsOperation{}
-	if err = json.Unmarshal(log.Data, &op); err != nil {
+	//root, err := f.State.Root()
+	//if err != nil {
+	//	return err
+	//}
+	op := &Operation{}
+	if err = proto.Unmarshal(log.Data, op); err != nil {
 		return err
 	}
-	ctx, c := context.WithCancel(f.ctx)
-	defer c()
-	err = f.State.Op(ctx, op)
+	//if op.Ctx.Pre != root {
+	//	if op.Ctx.Next == root {
+	//		f.inconsistent = false
+	//		return f.State
+	//	}
+	//	f.inconsistent = true
+	//	return f.State
+	//}
+	err = f.State.rpcOp(f.ctx, op.Code, op.Params)
 	if err != nil {
 		return err
 	}
-	rh, err := f.State.Root()
-	if err != nil {
-		return err
-	}
-	if rh != op.Root {
-		f.inconsistent = true
-	} else {
+	if newRoot, err := f.State.Root(); err != nil && op.Ctx.Next == newRoot {
 		f.inconsistent = false
 	}
-	return rh
+	_ = f.State.Flush()
+	return f.State
 }
 
 func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {
@@ -75,6 +86,10 @@ func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {
 func (f *Fsm) Restore(closer io.ReadCloser) error {
 	defer closer.Close()
 	return f.State.Unmarshal(closer)
+}
+
+func (f *Fsm) Inconsistent() bool {
+	return f.inconsistent
 }
 
 type Snapshot struct {

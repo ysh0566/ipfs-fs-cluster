@@ -5,12 +5,14 @@ go 1.15
 require (
 	github.com/dgraph-io/badger/v3 v3.2011.1
 	github.com/gin-gonic/gin v1.6.3
+	github.com/gogo/protobuf v1.3.1
 	github.com/golang/protobuf v1.4.1
 	github.com/hashicorp/raft v1.1.1
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.4.5
 	github.com/ipfs/go-ipfs-http-client v0.1.0
 	github.com/ipfs/go-ipld-format v0.2.0
+	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-mfs v0.1.2
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/jinzhu/configor v1.2.1

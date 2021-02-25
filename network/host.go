@@ -19,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/discovery"
 	ma "github.com/multiformats/go-multiaddr"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"sync"
 	"time"
 )
@@ -140,7 +141,7 @@ func (net *Network) Context() context.Context {
 func (net *Network) Connect(ctx context.Context, id string) (*grpc.ClientConn, error) {
 	net.lock.Lock()
 	defer net.lock.Unlock()
-	if conn, ok := net.conns[id]; ok {
+	if conn, ok := net.conns[id]; ok && conn.GetState() != connectivity.Shutdown {
 		return conn, nil
 	} else {
 		conn, err := grpc.DialContext(ctx, id, DialOption(net.host), grpc.WithInsecure())

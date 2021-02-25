@@ -4,7 +4,7 @@
 // 	protoc        v3.9.0
 // source: hello.proto
 
-package rpc
+package http
 
 import (
 	proto "github.com/golang/protobuf/proto"

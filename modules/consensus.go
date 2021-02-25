@@ -9,8 +9,8 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
+	"github.com/ysh0566/ipfs-fs-cluster/http"
 	"github.com/ysh0566/ipfs-fs-cluster/network"
-	"github.com/ysh0566/ipfs-fs-cluster/rpc"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 	"time"
@@ -35,15 +35,25 @@ func RaftConfig(js Config) *raft.Config {
 	return cfg
 }
 
-func DataStore(js Config) (*datastore.BadgerStore, error) {
-	return datastore.NewBadgerStore(js.DBPath)
+func DataStore(lc fx.Lifecycle, js Config) (*datastore.BadgerStore, error) {
+	d, err := datastore.NewBadgerStore(js.DBPath)
+	if err != nil {
+		return nil, err
+	}
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			return d.Close()
+		},
+	})
+	return d, err
 }
 
 func SnapshotStore() (raft.SnapshotStore, error) {
 	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (raft.FSM, error) {
+func Fsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*consensus.Fsm, error) {
 	return consensus.NewFsm(store, api)
 }
 
@@ -59,7 +69,7 @@ func Transport(n *network.Network) (raft.Transport, error) {
 	return p2praft.NewLibp2pTransport(n.Host(), time.Minute*2)
 }
 
-func Raft(conf *raft.Config, fsm raft.FSM, snaps raft.SnapshotStore, trans raft.Transport, badger *datastore.BadgerStore, js Config) (*raft.Raft, error) {
+func Raft(conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans raft.Transport, badger *datastore.BadgerStore, js Config) (*raft.Raft, error) {
 	servers := make([]raft.Server, len(js.Raft.Peers))
 	for i := 0; i < len(js.Raft.Peers); i++ {
 		servers[i] = raft.Server{
@@ -82,34 +92,46 @@ func RpcServer(n *network.Network) *grpc.Server {
 		return nil
 	}
 	s1 := grpc.NewServer()
-	rpc.RegisterGreeterServer(s1, &rpc.Server{})
+	http.RegisterGreeterServer(s1, &http.Server{})
 	go s1.Serve(listener)
 	return s1
 }
 
-type Clients struct {
-	c map[string]rpc.GreeterClient
+func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *network.Network) (*consensus.Node, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			cancel()
+			return nil
+		},
+	})
+	return consensus.NewNode(ctx, r, fsm, js.P2P.Identity.PeerID, net)
 }
 
-func (client Clients) Client(id string) rpc.GreeterClient {
-	if c, ok := client.c[id]; !ok {
-		return nil
-	} else {
-		return c
-	}
-}
-
-func RpcClients(n *network.Network, js Config) (*Clients, error) {
-	c := make(map[string]rpc.GreeterClient)
-	for i := 0; i < len(js.Raft.Peers); i++ {
-		if js.Raft.Peers[i] == js.P2P.Identity.PeerID {
-			continue
-		}
-		conn, err := n.Connect(n.Context(), js.Raft.Peers[i])
-		if err != nil {
-			return nil, err
-		}
-		c[js.Raft.Peers[i]] = rpc.NewGreeterClient(conn)
-	}
-	return &Clients{c: c}, nil
-}
+//type Clients struct {
+//	c map[string]http.GreeterClient
+//}
+//
+//func (client Clients) Client(id string) http.GreeterClient {
+//	if c, ok := client.c[id]; !ok {
+//		return nil
+//	} else {
+//		return c
+//	}
+//}
+//
+//func RpcClients(n *network.Network, js Config) (*Clients, error) {
+//	c := make(map[string]http.GreeterClient)
+//	for i := 0; i < len(js.Raft.Peers); i++ {
+//		if js.Raft.Peers[i] == js.P2P.Identity.PeerID {
+//			continue
+//		}
+//		conn, err := n.Connect(n.Context(), js.Raft.Peers[i])
+//		if err != nil {
+//			return nil, err
+//		}
+//		c[js.Raft.Peers[i]] = http.NewGreeterClient(conn)
+//	}
+//	return &Clients{c: c}, nil
+//}

@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"os"
 	gopath "path"
+	"sync"
 )
 
 var ErrParamsNum = errors.New("params num error")
@@ -22,6 +23,8 @@ type FileTreeState struct {
 	root  *mfs.Root
 	store *datastore.BadgerStore
 	ctx   context.Context
+	copy  *FileTreeState
+	once  sync.Once
 }
 
 func (fs *FileTreeState) Ls(ctx context.Context, path string) ([]mfs.NodeListing, error) {
@@ -35,21 +38,14 @@ func (fs *FileTreeState) Ls(ctx context.Context, path string) ([]mfs.NodeListing
 	case *mfs.File:
 		_, name := gopath.Split(path)
 		node := make([]mfs.NodeListing, 1)
-
-		size, err := fsn.Size()
-		if err != nil {
-			return nil, err
-		}
-
-		nd, err := fsn.GetNode()
-		if err != nil {
-			return nil, err
-		}
 		node[0] = mfs.NodeListing{
 			Name: name,
-			Type: int(fsn.Type()),
-			Size: size,
-			Hash: nd.Cid().Hash().B58String(),
+		}
+		if size, err := fsn.Size(); err == nil {
+			node[0].Size = size
+		}
+		if nd, err := fsn.GetNode(); err == nil {
+			node[0].Hash = nd.Cid().String()
 		}
 		return node, nil
 	default:
@@ -134,7 +130,7 @@ func (fs *FileTreeState) Rm(path string) error {
 	return pdir.Flush()
 }
 
-func (fs *FileTreeState) Commit() error {
+func (fs *FileTreeState) Flush() error {
 	root, err := fs.Root()
 	if err != nil {
 		return err
@@ -143,36 +139,44 @@ func (fs *FileTreeState) Commit() error {
 }
 
 func (fs *FileTreeState) Root() (string, error) {
-
 	n, err := fs.root.GetDirectory().GetNode()
 	if err != nil {
 		return "", err
 	}
-	return n.Cid().Hash().B58String(), nil
+	return n.Cid().String(), nil
 }
 
-func (fs *FileTreeState) Op(ctx context.Context, ops FsOperation) error {
-	switch ops.Op {
-	case OpCp:
-		if len(ops.Params) != 2 {
+func (fs *FileTreeState) MustGetRoot() string {
+	n, err := fs.root.GetDirectory().GetNode()
+	if err != nil {
+		panic(err)
+	}
+	return n.Cid().String()
+}
+
+func (fs *FileTreeState) rpcOp(ctx context.Context, code Operation_Code, params []string) error {
+	fmt.Println("code", code)
+	switch code {
+	case Operation_CP:
+		if len(params) != 2 {
 			return ErrParamsNum
 		}
-		return fs.Cp(ctx, ops.Params[0], ops.Params[1])
-	case OpMv:
-		if len(ops.Params) != 2 {
+		return fs.Cp(ctx, params[0], params[1])
+	case Operation_MV:
+		if len(params) != 2 {
 			return ErrParamsNum
 		}
-		return fs.Mv(ctx, ops.Params[0], ops.Params[1])
-	case OpRm:
-		if len(ops.Params) != 1 {
+		return fs.Mv(ctx, params[0], params[1])
+	case Operation_RM:
+		if len(params) != 1 {
 			return ErrParamsNum
 		}
-		return fs.Rm(ops.Params[0])
-	case OpMkdir:
-		if len(ops.Params) != 1 {
+		return fs.Rm(params[0])
+	case Operation_MKDIR:
+		if len(params) != 1 {
 			return ErrParamsNum
 		}
-		return fs.Mkdir(ops.Params[0])
+		return fs.Mkdir(params[0])
 	default:
 		return errors.New("unrecognized operation")
 	}
@@ -187,20 +191,63 @@ func (fts *FileTreeState) Marshal(writer io.Writer) error {
 	return err
 }
 
-func WalkDirectory(ctx context.Context, dir *mfs.Directory) error {
-	return dir.ForEachEntry(ctx, func(listing mfs.NodeListing) error {
-		node, err := dir.Child(listing.Name)
+func (fts *FileTreeState) Copy(ctx context.Context) (*FileTreeState, error) {
+	var err error
+	fts.once.Do(func() {
+		var raw format.Node
+		var root *mfs.Root
+		raw, err = fts.root.GetDirectory().GetNode()
+		if err != nil {
+			return
+		}
+		node, ok := raw.(*merkledag.ProtoNode)
+		if !ok {
+			panic(err)
+		}
+		root, err = mfs.NewRoot(ctx, fts.dag, node, func(ctx context.Context, cid cid.Cid) error {
+			return nil
+		})
+		fts.copy = &FileTreeState{
+			dag:   fts.dag,
+			root:  root,
+			store: fts.store,
+			ctx:   ctx,
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return fts.copy, nil
+}
+
+func WalkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]bool) error {
+	ls, err := dir.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, node := range ls {
+		node, err := dir.Child(node.Name)
 		if err != nil {
 			return err
 		}
+		if fnode, err := node.GetNode(); err != nil {
+			return err
+		} else {
+			if _, ok := visited[fnode.Cid().String()]; ok {
+				return nil
+			} else {
+				visited[fnode.Cid().String()] = true
+			}
+		}
 		if node.Type() == mfs.TDir {
-			err = WalkDirectory(ctx, node.(*mfs.Directory))
+			err = WalkDirectory(ctx, node.(*mfs.Directory), visited)
 			if err != nil {
 				return err
 			}
 		}
 		return nil
-	})
+	}
+	return nil
 }
 
 func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
@@ -216,14 +263,7 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	dir, err := mfs.NewDirectory(fts.ctx, "tmp", raw, nil, fts.dag)
-	if err != nil {
-		return err
-	}
-	err = WalkDirectory(fts.ctx, dir)
-	if err != nil {
-		return err
-	}
+
 	rootNode, ok := raw.(*merkledag.ProtoNode)
 	if !ok {
 		return errors.New("invalid root node")
@@ -231,6 +271,11 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	r, err := mfs.NewRoot(fts.ctx, fts.dag, rootNode, func(ctx context.Context, cid cid.Cid) error {
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	visited := make(map[string]bool)
+	err = WalkDirectory(fts.ctx, r.GetDirectory(), visited)
 	if err != nil {
 		return err
 	}

@@ -1,19 +1,19 @@
 package modules
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"github.com/hashicorp/raft"
-	"time"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus"
 )
 
 type Op struct {
-	Op     int      `json:"op"`
+	Op     string   `json:"op"`
 	Params []string `json:"params"`
 	Root   string   `json:"root"`
 }
 
-func Server2(raft *raft.Raft, fsm raft.FSM, config Config) {
+func Server2(node *consensus.Node, config Config) {
 	router := gin.Default()
 
 	// Query string parameters are parsed using the existing underlying request object.
@@ -23,10 +23,46 @@ func Server2(raft *raft.Raft, fsm raft.FSM, config Config) {
 		if err != nil {
 			return
 		}
-		if string(raft.Leader()) == config.P2P.Identity.PeerID {
-			raft.Apply(d, time.Second*60)
+		op := &Op{}
+		err = json.Unmarshal(d, op)
+		if err != nil {
+			c.JSON(200, err.Error())
 		}
-
+		switch op.Op {
+		case "ls":
+			n, _ := node.Ls(c, op.Params[0])
+			c.JSON(200, n)
+		case "cp":
+			err := node.Op(c, consensus.Operation_CP, op.Params[0], op.Params[1])
+			if err != nil {
+				c.JSON(200, err.Error())
+			} else {
+				c.JSON(200, "success")
+			}
+		case "mv":
+			err := node.Op(c, consensus.Operation_MV, op.Params[0], op.Params[1])
+			if err != nil {
+				c.JSON(200, err.Error())
+			} else {
+				c.JSON(200, "success")
+			}
+		case "rm":
+			err := node.Op(c, consensus.Operation_RM, op.Params[0])
+			if err != nil {
+				c.JSON(200, err.Error())
+			} else {
+				c.JSON(200, "success")
+			}
+		case "mkdir":
+			err := node.Op(c, consensus.Operation_MKDIR, op.Params[0])
+			if err != nil {
+				c.JSON(200, err.Error())
+			} else {
+				c.JSON(200, "success")
+			}
+		default:
+			c.JSON(200, "???")
+		}
 	})
 	go router.Run(fmt.Sprintf(":%d", config.Port))
 }

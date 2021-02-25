@@ -32,6 +32,10 @@ func NewBadgerStore(path string) (*BadgerStore, error) {
 	return store, nil
 }
 
+func (s *BadgerStore) Close() error {
+	return s.db.Close()
+}
+
 func (s *BadgerStore) setKey(key []byte, val []byte) error {
 	fmt.Println(string(key), string(val))
 	tx := s.db.NewTransaction(true)
