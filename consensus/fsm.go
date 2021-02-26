@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-cid"
@@ -52,22 +53,18 @@ func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
 
 func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var err error
-	//root, err := f.State.Root()
-	//if err != nil {
-	//	return err
-	//}
+	fmt.Println("index: ", log.Index)
+	if log.Index < f.State.index {
+		f.inconsistent = true
+		return f.State
+	} else if log.Index == f.State.index {
+		f.inconsistent = false
+		return f.State
+	}
 	op := &Operation{}
 	if err = proto.Unmarshal(log.Data, op); err != nil {
 		return err
 	}
-	//if op.Ctx.Pre != root {
-	//	if op.Ctx.Next == root {
-	//		f.inconsistent = false
-	//		return f.State
-	//	}
-	//	f.inconsistent = true
-	//	return f.State
-	//}
 	err = f.State.rpcOp(f.ctx, op.Code, op.Params)
 	if err != nil {
 		return err
@@ -75,6 +72,7 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 	if newRoot, err := f.State.Root(); err != nil && op.Ctx.Next == newRoot {
 		f.inconsistent = false
 	}
+	f.State.index = log.Index
 	_ = f.State.Flush()
 	return f.State
 }

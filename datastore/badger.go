@@ -123,7 +123,6 @@ func (s *BadgerStore) GetLog(index uint64, log *raft.Log) error {
 }
 
 func (s *BadgerStore) StoreLog(l *raft.Log) error {
-	log.Info("StoreLog", l.Index)
 	tx := s.db.NewTransaction(true)
 	defer tx.Discard()
 	tmp := make([]byte, 8, 8)
@@ -150,7 +149,6 @@ func (s *BadgerStore) StoreLogs(ls []*raft.Log) error {
 	tmp := make([]byte, 8, 8)
 	var max uint64
 	for _, l := range ls {
-		log.Info("StoreLogs", l.Index)
 		binary.LittleEndian.PutUint64(tmp, l.Index)
 		key := append(dbLogsPrefix, tmp...)
 

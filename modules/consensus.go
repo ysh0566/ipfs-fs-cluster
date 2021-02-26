@@ -4,15 +4,12 @@ import (
 	"context"
 	"github.com/hashicorp/raft"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
-	gostream "github.com/libp2p/go-libp2p-gostream"
 	p2praft "github.com/libp2p/go-libp2p-raft"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
-	"github.com/ysh0566/ipfs-fs-cluster/http"
 	"github.com/ysh0566/ipfs-fs-cluster/network"
 	"go.uber.org/fx"
-	"google.golang.org/grpc"
 	"time"
 )
 
@@ -30,6 +27,7 @@ func Network(lc fx.Lifecycle, cfg *network.NetConfig) (*network.Network, error) 
 
 func RaftConfig(js Config) *raft.Config {
 	cfg := raft.DefaultConfig()
+	cfg.SnapshotThreshold = 100
 	cfg.LogLevel = js.Raft.LogLevel
 	cfg.LocalID = raft.ServerID(js.P2P.Identity.PeerID)
 	return cfg
@@ -84,17 +82,6 @@ func Raft(conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans
 	}
 	r.BootstrapCluster(raft.Configuration{Servers: servers})
 	return r, nil
-}
-
-func RpcServer(n *network.Network) *grpc.Server {
-	listener, err := gostream.Listen(n.Host(), network.Protocol)
-	if err != nil {
-		return nil
-	}
-	s1 := grpc.NewServer()
-	http.RegisterGreeterServer(s1, &http.Server{})
-	go s1.Serve(listener)
-	return s1
 }
 
 func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *network.Network) (*consensus.Node, error) {

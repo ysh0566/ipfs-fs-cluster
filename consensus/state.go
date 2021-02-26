@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ipfs/go-cid"
@@ -25,6 +26,7 @@ type FileTreeState struct {
 	ctx   context.Context
 	copy  *FileTreeState
 	once  sync.Once
+	index uint64
 }
 
 func (fs *FileTreeState) Ls(ctx context.Context, path string) ([]mfs.NodeListing, error) {
@@ -131,11 +133,7 @@ func (fs *FileTreeState) Rm(path string) error {
 }
 
 func (fs *FileTreeState) Flush() error {
-	root, err := fs.Root()
-	if err != nil {
-		return err
-	}
-	return fs.store.StoreState(root)
+	return fs.store.StoreState(fs.String())
 }
 
 func (fs *FileTreeState) Root() (string, error) {
@@ -183,12 +181,20 @@ func (fs *FileTreeState) rpcOp(ctx context.Context, code Operation_Code, params 
 }
 
 func (fts *FileTreeState) Marshal(writer io.Writer) error {
-	r, err := fts.Root()
-	if err != nil {
-		return err
-	}
-	_, err = writer.Write([]byte(r))
+	_, err := writer.Write([]byte(fts.String()))
 	return err
+}
+
+func (fts *FileTreeState) String() string {
+	d := struct {
+		Index uint64 `json:"index"`
+		Root  string `json:"root"`
+	}{
+		Index: fts.index,
+		Root:  fts.MustGetRoot(),
+	}
+	data, _ := json.Marshal(d)
+	return string(data)
 }
 
 func (fts *FileTreeState) Copy(ctx context.Context) (*FileTreeState, error) {
@@ -255,7 +261,14 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
-	c, err := cid.Decode(string(bs))
+	state := struct {
+		Index uint64 `json:"index"`
+		Root  string `json:"root"`
+	}{}
+	if err = json.Unmarshal(bs, &state); err != nil {
+		return err
+	}
+	c, err := cid.Decode(state.Root)
 	if err != nil {
 		return err
 	}
@@ -280,6 +293,7 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 		return err
 	}
 	fts.root = r
+	fts.index = state.Index
 	return nil
 }
 
