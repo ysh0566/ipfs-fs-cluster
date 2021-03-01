@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"context"
-	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-cid"
@@ -21,7 +20,7 @@ type Fsm struct {
 	inconsistent bool
 }
 
-func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
+func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
 	s, err := store.LoadState()
 	state := &FileTreeState{
 		dag:   api.Dag(),
@@ -29,7 +28,7 @@ func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
 		ctx:   context.Background(),
 	}
 	if err != nil {
-		if err != datastore.ErrNotFound {
+		if err != datastore.ErrKeyNotFound {
 			return nil, err
 		} else {
 			r, _ := mfs.NewRoot(context.Background(), api.Dag(), unixfs.EmptyDirNode(), func(ctx context.Context, cid cid.Cid) error {
@@ -53,7 +52,6 @@ func NewFsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*Fsm, error) {
 
 func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var err error
-	fmt.Println("index: ", log.Index)
 	if log.Index < f.State.index {
 		f.inconsistent = true
 		return f.State

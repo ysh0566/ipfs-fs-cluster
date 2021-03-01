@@ -14,15 +14,17 @@ import (
 )
 
 func Network(lc fx.Lifecycle, cfg *network.NetConfig) (*network.Network, error) {
-	ctx, cancel := context.WithCancel(context.Background())
+	n, err := network.NewNetwork(*cfg)
+	if err != nil {
+		return nil, err
+	}
 	lc.Append(fx.Hook{
 		OnStart: nil,
 		OnStop: func(ctx context.Context) error {
-			cancel()
-			return nil
+			return n.Close()
 		},
 	})
-	return network.NewNetwork(ctx, *cfg)
+	return n, nil
 }
 
 func RaftConfig(js Config) *raft.Config {
@@ -33,7 +35,7 @@ func RaftConfig(js Config) *raft.Config {
 	return cfg
 }
 
-func DataStore(lc fx.Lifecycle, js Config) (*datastore.BadgerStore, error) {
+func DataStore(lc fx.Lifecycle, js Config) (*datastore.BadgerDB, error) {
 	d, err := datastore.NewBadgerStore(js.DBPath)
 	if err != nil {
 		return nil, err
@@ -51,7 +53,7 @@ func SnapshotStore() (raft.SnapshotStore, error) {
 	return raft.NewFileSnapshotStore("snapshot", 5, nil)
 }
 
-func Fsm(store *datastore.BadgerStore, api *httpapi.HttpApi) (*consensus.Fsm, error) {
+func Fsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*consensus.Fsm, error) {
 	return consensus.NewFsm(store, api)
 }
 
@@ -67,7 +69,7 @@ func Transport(n *network.Network) (raft.Transport, error) {
 	return p2praft.NewLibp2pTransport(n.Host(), time.Minute*2)
 }
 
-func Raft(conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans raft.Transport, badger *datastore.BadgerStore, js Config) (*raft.Raft, error) {
+func Raft(lc fx.Lifecycle, conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans raft.Transport, badger *datastore.BadgerDB, js Config) (*raft.Raft, error) {
 	servers := make([]raft.Server, len(js.Raft.Peers))
 	for i := 0; i < len(js.Raft.Peers); i++ {
 		servers[i] = raft.Server{
@@ -76,11 +78,17 @@ func Raft(conf *raft.Config, fsm *consensus.Fsm, snaps raft.SnapshotStore, trans
 			Address:  raft.ServerAddress(js.Raft.Peers[i]),
 		}
 	}
-	r, err := raft.NewRaft(conf, fsm, badger, badger, snaps, trans)
+	r, err := raft.NewRaft(conf, fsm, datastore.NewLogDB(badger), datastore.NewStableDB(badger), snaps, trans)
 	if err != nil {
 		return nil, err
 	}
-	r.BootstrapCluster(raft.Configuration{Servers: servers})
+	_ = r.BootstrapCluster(raft.Configuration{Servers: servers})
+	lc.Append(fx.Hook{
+		OnStart: nil,
+		OnStop: func(ctx context.Context) error {
+			return r.Shutdown().Error()
+		},
+	})
 	return r, nil
 }
 

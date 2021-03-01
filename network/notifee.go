@@ -8,9 +8,8 @@ import (
 
 type PeerHandler struct {
 	host host.Host
-	ctx  context.Context
 }
 
 func (p *PeerHandler) HandlePeerFound(info peer.AddrInfo) {
-	_ = p.host.Connect(p.ctx, info)
+	_ = p.host.Connect(context.Background(), info)
 }

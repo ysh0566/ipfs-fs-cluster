@@ -6,7 +6,7 @@
 		},
 		"bootstrap": [],
 		"listen": [
-			"/ip4/0.0.0.0/tcp/10040"
+			"/ip4/10.0.0.233/tcp/10040"
 		],
 		"secret": "2fa6063a945f2ae5fc9c40648601e8fe0de73466463743ea198d74eee67a97fd",
 		"enable_relay_hop": true,

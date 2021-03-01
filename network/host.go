@@ -2,7 +2,6 @@ package network
 
 import (
 	"context"
-	"fmt"
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	relay "github.com/libp2p/go-libp2p-circuit"
@@ -47,7 +46,7 @@ func newDHT(ctx context.Context, h host.Host, store datastore.Datastore, extraop
 	//if batchingDs, ok := store.(datastore.Batching); ok {
 	//	dhtDatastore := namespace.Wrap(batchingDs, datastore.NewKey("dht"))
 	//	opts = append(opts, dual.DHTOption(dht.Datastore(dhtDatastore)))
-	//	logger.Debug("enabling DHT record persistence to datastore")
+	//	//logger.Debug("enabling DHT record persistence to datastore")
 	//}
 
 	return dual.New(ctx, h, opts...)
@@ -98,59 +97,59 @@ func NewHost(ctx context.Context, cfg NetConfig) (host.Host, error) {
 
 type Network struct {
 	host  host.Host
-	ctx   context.Context
 	mdns  discovery.Service
 	lock  sync.Mutex
 	conns map[string]*grpc.ClientConn
 }
 
-func NewNetwork(ctx context.Context, cfg NetConfig) (*Network, error) {
+func NewNetwork(cfg NetConfig) (*Network, error) {
 	net := &Network{
-		ctx:   ctx,
 		conns: map[string]*grpc.ClientConn{},
 	}
-	h, err := NewHost(ctx, cfg)
+	h, err := NewHost(context.Background(), cfg)
 	if err != nil {
 		return nil, err
 	}
 	net.host = h
 	if cfg.EnableMdns {
-		mdns, err := discovery.NewMdnsService(ctx, h, time.Second*20, "ipfs-fs-cluster")
+		mdns, err := discovery.NewMdnsService(context.Background(), h, time.Second*20, "ipfs-fs-cluster")
 		if err != nil {
 			panic(err)
 		}
 		handle := PeerHandler{
 			host: h,
-			ctx:  ctx,
 		}
-		fmt.Println("mdns registered")
 		mdns.RegisterNotifee(&handle)
 		net.mdns = mdns
 	}
 	return net, nil
 }
 
-func (net *Network) grpcConnect(ctx context.Context, id string) (*grpc.ClientConn, error) {
-	return grpc.DialContext(ctx, id, DialOption(net.host), grpc.WithInsecure())
-}
-
-func (net *Network) Context() context.Context {
-	return net.ctx
-}
-
-func (net *Network) Connect(ctx context.Context, id string) (*grpc.ClientConn, error) {
+func (net *Network) Connect(dialCtx context.Context, id string) (*grpc.ClientConn, error) {
 	net.lock.Lock()
 	defer net.lock.Unlock()
 	if conn, ok := net.conns[id]; ok && conn.GetState() != connectivity.Shutdown {
 		return conn, nil
 	} else {
-		conn, err := grpc.DialContext(ctx, id, DialOption(net.host), grpc.WithInsecure())
+		conn, err := grpc.DialContext(dialCtx, id, DialOption(net.host), grpc.WithInsecure())
 		if err != nil {
 			return conn, err
 		}
 		net.conns[id] = conn
 		return conn, nil
 	}
+}
+
+func (net *Network) Close() error {
+	net.lock.Lock()
+	defer net.lock.Unlock()
+	for _, conn := range net.conns {
+		_ = conn.Close()
+	}
+	if net.mdns != nil {
+		_ = net.mdns.Close()
+	}
+	return net.host.Close()
 }
 
 func (net *Network) Host() host.Host {

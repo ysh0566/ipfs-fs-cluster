@@ -22,7 +22,7 @@ var ErrParamsNum = errors.New("params num error")
 type FileTreeState struct {
 	dag   format.DAGService
 	root  *mfs.Root
-	store *datastore.BadgerStore
+	store *datastore.BadgerDB
 	ctx   context.Context
 	copy  *FileTreeState
 	once  sync.Once

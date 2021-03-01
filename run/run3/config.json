@@ -4,7 +4,9 @@
 			"peer_id": "12D3KooWJbkbLcZas8LxmmLomJpKZ69oJA1CX8AeNcqPBphWVHgM",
 			"priv_key": "z23jhTfdqYhyvzj7PgBvw4JuDyBJ9MhmW7YseKBL2Zo9XRywx23jrqSvvkghRr3Aif3xtLTLqcQEzSwaNVxygEVRgs2VC5"
 		},
-		"bootstrap": [],
+		"bootstrap": [
+			"/ip4/10.0.0.233/tcp/10040"
+		],
 		"listen": [
 			"/ip4/0.0.0.0/tcp/10042"
 		],

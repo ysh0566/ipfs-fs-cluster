@@ -4,9 +4,11 @@
 			"peer_id": "12D3KooWH6rowPV3eVc3QjiMRDAWva5LpYrt2optPQZiwUm5jQ6c",
 			"priv_key": "z23jhTbbGy8CR8fcch3UqHf4dLnJxSN81zYaGVSF7tpZZZ6ZgJm59Uq9PSZLuDEUNZNK3nLd7Bc4Tr9B139KYwWm9H9CFS"
 		},
-		"bootstrap": [],
+		"bootstrap": [
+			"/ip4/10.0.0.233/tcp/10040"
+		],
 		"listen": [
-			"/ip4/0.0.0.0/tcp/10041"
+			"/ip4/10.0.0.233/tcp/10041"
 		],
 		"secret": "2fa6063a945f2ae5fc9c40648601e8fe0de73466463743ea198d74eee67a97fd",
 		"enable_relay_hop": true,
