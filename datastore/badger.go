@@ -14,6 +14,15 @@ type BadgerDB struct {
 	db *badger.DB
 }
 
+func (s *BadgerDB) Delete(bytes []byte) error {
+	tx := s.db.NewTransaction(true)
+	defer tx.Discard()
+	if err := tx.Delete(bytes); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func NewBadgerStore(path string) (*BadgerDB, error) {
 	var err error
 	store := &BadgerDB{}
@@ -27,15 +36,16 @@ func (s *BadgerDB) Close() error {
 	return s.db.Close()
 }
 
-func (s *BadgerDB) set(key []byte, val []byte) error {
+func (s *BadgerDB) Set(key []byte, val []byte) error {
 	tx := s.db.NewTransaction(true)
+	defer tx.Discard()
 	if err := tx.Set(key, val); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *BadgerDB) get(key []byte) ([]byte, error) {
+func (s *BadgerDB) Get(key []byte) ([]byte, error) {
 	tx := s.db.NewTransaction(false)
 	defer tx.Discard()
 	item, err := tx.Get(key)
@@ -48,14 +58,47 @@ func (s *BadgerDB) get(key []byte) ([]byte, error) {
 	return item.ValueCopy(nil)
 }
 
+func (s *BadgerDB) NewTransaction(update bool) Transaction {
+	return &Txn{s.db.NewTransaction(update)}
+}
+
 func (s *BadgerDB) StoreState(hash string) error {
-	return s.set(dbState, []byte(hash))
+	return s.Set(dbState, []byte(hash))
 }
 
 func (s *BadgerDB) LoadState() (string, error) {
-	v, err := s.get(dbState)
+	v, err := s.Get(dbState)
 	if err != nil {
 		return "", err
 	}
 	return string(v), err
+}
+
+type Txn struct {
+	*badger.Txn
+}
+
+func (t *Txn) Get(key []byte) ([]byte, error) {
+	item, err := t.Txn.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	return item.ValueCopy(nil)
+}
+
+type Transaction interface {
+	kv
+	Discard()
+	Commit() error
+}
+
+type kv interface {
+	Delete([]byte) error
+	Set(key []byte, val []byte) error
+	Get(key []byte) ([]byte, error)
+}
+
+type DataBase interface {
+	kv
+	NewTransaction(update bool) Transaction
 }

@@ -2,9 +2,9 @@ package datastore
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"github.com/hashicorp/raft"
 	"github.com/prometheus/common/log"
+	"github.com/ysh0566/ipfs-fs-cluster/datastore/pb"
 )
 
 var (
@@ -13,11 +13,11 @@ var (
 )
 
 type LogDB struct {
-	*BadgerDB
+	db DataBase
 }
 
 func (l LogDB) FirstIndex() (uint64, error) {
-	if v, err := l.get(dbLogsFirstIndex); err == nil {
+	if v, err := l.db.Get(dbLogsFirstIndex); err == nil {
 		return binary.LittleEndian.Uint64(v), nil
 
 	} else {
@@ -29,7 +29,7 @@ func (l LogDB) FirstIndex() (uint64, error) {
 }
 
 func (l LogDB) LastIndex() (uint64, error) {
-	if v, err := l.get(dbLogsLastIndex); err == nil {
+	if v, err := l.db.Get(dbLogsLastIndex); err == nil {
 		return binary.LittleEndian.Uint64(v), nil
 
 	} else {
@@ -41,8 +41,8 @@ func (l LogDB) LastIndex() (uint64, error) {
 }
 
 func (l LogDB) GetLog(index uint64, log *raft.Log) error {
-	if bs, err := l.get(l.uint64Key(index)); err == nil {
-		return json.Unmarshal(bs, log)
+	if bs, err := l.db.Get(l.uint64Key(index)); err == nil {
+		return pb.DecodeLog(bs, log)
 	} else {
 		if err == ErrKeyNotFound {
 			return ErrKeyNotFound
@@ -54,7 +54,7 @@ func (l LogDB) GetLog(index uint64, log *raft.Log) error {
 func (l LogDB) StoreLog(log *raft.Log) error {
 	tx := l.db.NewTransaction(true)
 	defer tx.Discard()
-	bs, err := json.Marshal(log)
+	bs, err := pb.EncodeLog(log)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,7 @@ func (l LogDB) StoreLogs(logs []*raft.Log) error {
 	for _, logObj := range logs {
 		binary.LittleEndian.PutUint64(key[1:], logObj.Index)
 
-		bs, err := json.Marshal(logObj)
+		bs, err := pb.EncodeLog(logObj)
 		if err != nil {
 			return err
 		}

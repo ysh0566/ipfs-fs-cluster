@@ -153,7 +153,6 @@ func (fs *FileTreeState) MustGetRoot() string {
 }
 
 func (fs *FileTreeState) rpcOp(ctx context.Context, code Operation_Code, params []string) error {
-	fmt.Println("code", code)
 	switch code {
 	case Operation_CP:
 		if len(params) != 2 {

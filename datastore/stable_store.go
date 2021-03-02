@@ -5,19 +5,19 @@ import (
 )
 
 type StableDB struct {
-	*BadgerDB
+	db DataBase
 }
 
 func (s *StableDB) Set(key []byte, val []byte) error {
 	keyInDB := []byte{s.prefix()}
 	keyInDB = append(keyInDB, key...)
-	return s.set(keyInDB, val)
+	return s.db.Set(keyInDB, val)
 }
 
 func (s *StableDB) Get(key []byte) ([]byte, error) {
 	keyInDB := []byte{s.prefix()}
 	keyInDB = append(keyInDB, key...)
-	return s.get(keyInDB)
+	return s.db.Get(keyInDB)
 }
 
 func (s *StableDB) SetUint64(key []byte, val uint64) error {
