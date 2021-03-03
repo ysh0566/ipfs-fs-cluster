@@ -8,6 +8,8 @@ import (
 	httpapi "github.com/ipfs/go-ipfs-http-client"
 	"github.com/ipfs/go-mfs"
 	"github.com/ipfs/go-unixfs"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus/state"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
 	"io"
 	"strings"
@@ -15,14 +17,16 @@ import (
 
 type Fsm struct {
 	client       *httpapi.HttpApi
-	State        *FileTreeState
+	State        *state.FileTreeState
 	ctx          context.Context
 	inconsistent bool
 }
 
 func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
 	s, err := store.LoadState()
-	state := &FileTreeState{
+	n, _ := api.Dag().Get()
+
+	state := &state.FileTreeState{
 		dag:   api.Dag(),
 		store: store,
 		ctx:   context.Background(),
@@ -41,6 +45,7 @@ func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
 		if err != nil {
 			return nil, err
 		}
+		_ = state.EnsureStored()
 	}
 	return &Fsm{
 		client:       api,
@@ -59,11 +64,11 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 		f.inconsistent = false
 		return f.State
 	}
-	op := &Operation{}
+	op := &pb.Operation{}
 	if err = proto.Unmarshal(log.Data, op); err != nil {
 		return err
 	}
-	err = f.State.rpcOp(f.ctx, op.Code, op.Params)
+	err = f.State.RpcOp(f.ctx, op.Code, op.Params)
 	if err != nil {
 		return err
 	}
@@ -89,7 +94,7 @@ func (f *Fsm) Inconsistent() bool {
 }
 
 type Snapshot struct {
-	state *FileTreeState
+	state *state.FileTreeState
 }
 
 func (s *Snapshot) Persist(sink raft.SnapshotSink) error {

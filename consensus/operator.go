@@ -4,7 +4,9 @@ import (
 	"context"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"google.golang.org/grpc"
+	"net/http"
 	"time"
 )
 
@@ -24,19 +26,19 @@ type LocalOperator struct {
 }
 
 func (l *LocalOperator) Cp(ctx context.Context, preHash, hash, dir, path string) error {
-	return l.operation(Operation_CP, preHash, hash, dir, path)
+	return l.operation(pb.Operation_CP, preHash, hash, dir, path)
 }
 
 func (l *LocalOperator) Mv(ctx context.Context, preHash, hash, dir, path string) error {
-	return l.operation(Operation_MV, preHash, hash, dir, path)
+	return l.operation(pb.Operation_MV, preHash, hash, dir, path)
 }
 
 func (l *LocalOperator) Rm(ctx context.Context, preHash, hash, path string) error {
-	return l.operation(Operation_RM, preHash, hash, path)
+	return l.operation(pb.Operation_RM, preHash, hash, path)
 }
 
 func (l *LocalOperator) MkDir(ctx context.Context, preHash, hash, path string) error {
-	return l.operation(Operation_MKDIR, preHash, hash, path)
+	return l.operation(pb.Operation_MKDIR, preHash, hash, path)
 }
 
 func (l *LocalOperator) Address() string {
@@ -50,11 +52,12 @@ func NewLocalOperator(r *raft.Raft, address string) *LocalOperator {
 	}
 }
 
-func (l *LocalOperator) operation(code Operation_Code, preHash, hash string, params ...string) error {
-	op := &Operation{
+func (l *LocalOperator) operation(code pb.Operation_Code, preHash, hash string, params ...string) error {
+	http.Post()
+	op := &pb.Operation{
 		Code:   code,
 		Params: params,
-		Ctx: &Ctx{
+		Ctx: &pb.Ctx{
 			Pre:  preHash,
 			Next: hash,
 		},
@@ -68,15 +71,15 @@ func (l *LocalOperator) operation(code Operation_Code, preHash, hash string, par
 }
 
 type RemoteOperator struct {
-	client FileOpClient
+	client pb.FileOpClient
 	addr   string
 }
 
 func (r *RemoteOperator) Cp(ctx context.Context, preHash, hash, dir, path string) error {
-	_, err := r.client.Cp(ctx, &DirPath{
+	_, err := r.client.Cp(ctx, &pb.DirPath{
 		Dir:  dir,
 		Path: path,
-		Ctx: &Ctx{
+		Ctx: &pb.Ctx{
 			Pre:  preHash,
 			Next: hash,
 		},
@@ -85,10 +88,10 @@ func (r *RemoteOperator) Cp(ctx context.Context, preHash, hash, dir, path string
 }
 
 func (r *RemoteOperator) Mv(ctx context.Context, preHash, hash, dir, path string) error {
-	_, err := r.client.Mv(ctx, &DirPath{
+	_, err := r.client.Mv(ctx, &pb.DirPath{
 		Dir:  dir,
 		Path: path,
-		Ctx: &Ctx{
+		Ctx: &pb.Ctx{
 			Pre:  preHash,
 			Next: hash,
 		},
@@ -97,9 +100,9 @@ func (r *RemoteOperator) Mv(ctx context.Context, preHash, hash, dir, path string
 }
 
 func (r *RemoteOperator) Rm(ctx context.Context, preHash, hash, path string) error {
-	_, err := r.client.Rm(ctx, &Path{
+	_, err := r.client.Rm(ctx, &pb.Path{
 		Path: path,
-		Ctx: &Ctx{
+		Ctx: &pb.Ctx{
 			Pre:  preHash,
 			Next: hash,
 		},
@@ -108,9 +111,9 @@ func (r *RemoteOperator) Rm(ctx context.Context, preHash, hash, path string) err
 }
 
 func (r *RemoteOperator) MkDir(ctx context.Context, preHash, hash, path string) error {
-	_, err := r.client.MkDir(ctx, &Path{
+	_, err := r.client.MkDir(ctx, &pb.Path{
 		Path: path,
-		Ctx: &Ctx{
+		Ctx: &pb.Ctx{
 			Pre:  preHash,
 			Next: hash,
 		},
@@ -124,7 +127,7 @@ func (r *RemoteOperator) Address() string {
 
 func NewRemoteOperator(conn grpc.ClientConnInterface, addr string) *RemoteOperator {
 	return &RemoteOperator{
-		client: NewFileOpClient(conn),
+		client: pb.NewFileOpClient(conn),
 		addr:   addr,
 	}
 }
@@ -137,22 +140,22 @@ func (f FsOpServer) mustEmbedUnimplementedFileOpServer() {
 
 }
 
-func (f FsOpServer) Cp(ctx context.Context, in *DirPath) (*Empty, error) {
+func (f FsOpServer) Cp(ctx context.Context, in *pb.DirPath) (*pb.Empty, error) {
 	err := f.operator.Cp(ctx, in.Ctx.Pre, in.Ctx.Next, in.Dir, in.Path)
-	return &Empty{}, err
+	return &pb.Empty{}, err
 }
 
-func (f FsOpServer) Mv(ctx context.Context, in *DirPath) (*Empty, error) {
+func (f FsOpServer) Mv(ctx context.Context, in *pb.DirPath) (*pb.Empty, error) {
 	err := f.operator.Mv(ctx, in.Ctx.Pre, in.Ctx.Next, in.Dir, in.Path)
-	return &Empty{}, err
+	return &pb.Empty{}, err
 }
 
-func (f FsOpServer) Rm(ctx context.Context, in *Path) (*Empty, error) {
+func (f FsOpServer) Rm(ctx context.Context, in *pb.Path) (*pb.Empty, error) {
 	err := f.operator.Rm(ctx, in.Ctx.Pre, in.Ctx.Next, in.Path)
-	return &Empty{}, err
+	return &pb.Empty{}, err
 }
 
-func (f FsOpServer) MkDir(ctx context.Context, in *Path) (*Empty, error) {
+func (f FsOpServer) MkDir(ctx context.Context, in *pb.Path) (*pb.Empty, error) {
 	err := f.operator.MkDir(ctx, in.Ctx.Pre, in.Ctx.Next, in.Path)
-	return &Empty{}, err
+	return &pb.Empty{}, err
 }

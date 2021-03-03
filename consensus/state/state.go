@@ -1,4 +1,4 @@
-package consensus
+package state
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	format "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-mfs"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
 	"io"
 	"io/ioutil"
@@ -22,7 +23,7 @@ var ErrParamsNum = errors.New("params num error")
 type FileTreeState struct {
 	dag   format.DAGService
 	root  *mfs.Root
-	store *datastore.BadgerDB
+	store datastore.StateDB
 	ctx   context.Context
 	copy  *FileTreeState
 	once  sync.Once
@@ -152,24 +153,24 @@ func (fs *FileTreeState) MustGetRoot() string {
 	return n.Cid().String()
 }
 
-func (fs *FileTreeState) rpcOp(ctx context.Context, code Operation_Code, params []string) error {
+func (fs *FileTreeState) RpcOp(ctx context.Context, code pb.Instruction_Code, params []string) error {
 	switch code {
-	case Operation_CP:
+	case pb.Instruction_CP:
 		if len(params) != 2 {
 			return ErrParamsNum
 		}
 		return fs.Cp(ctx, params[0], params[1])
-	case Operation_MV:
+	case pb.Instruction_MV:
 		if len(params) != 2 {
 			return ErrParamsNum
 		}
 		return fs.Mv(ctx, params[0], params[1])
-	case Operation_RM:
+	case pb.Instruction_RM:
 		if len(params) != 1 {
 			return ErrParamsNum
 		}
 		return fs.Rm(params[0])
-	case Operation_MKDIR:
+	case pb.Instruction_MKDIR:
 		if len(params) != 1 {
 			return ErrParamsNum
 		}
@@ -255,6 +256,11 @@ func WalkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]b
 	return nil
 }
 
+func (fts *FileTreeState) EnsureStored() error {
+	visited := make(map[string]bool)
+	return WalkDirectory(fts.ctx, fts.root.GetDirectory(), visited)
+}
+
 func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	bs, err := ioutil.ReadAll(reader)
 	if err != nil {
@@ -283,11 +289,6 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 	r, err := mfs.NewRoot(fts.ctx, fts.dag, rootNode, func(ctx context.Context, cid cid.Cid) error {
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	visited := make(map[string]bool)
-	err = WalkDirectory(fts.ctx, r.GetDirectory(), visited)
 	if err != nil {
 		return err
 	}

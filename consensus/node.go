@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/ipfs/go-mfs"
 	gostream "github.com/libp2p/go-libp2p-gostream"
+	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"github.com/ysh0566/ipfs-fs-cluster/network"
 	"google.golang.org/grpc"
 	"sync"
@@ -26,7 +27,7 @@ func (n *Node) Raft() *raft.Raft {
 	return n.raft
 }
 
-func (n *Node) Op(ctx context.Context, code Operation_Code, params ...string) error {
+func (n *Node) Op(ctx context.Context, code pb.Operation_Code, params ...string) error {
 	if n.fsm.Inconsistent() {
 		return errors.New("inconsistent state")
 	}
@@ -35,7 +36,7 @@ func (n *Node) Op(ctx context.Context, code Operation_Code, params ...string) er
 	if err != nil {
 		return err
 	}
-	if err := fork.rpcOp(ctx, code, params); err != nil {
+	if err := fork.RpcOp(ctx, code, params); err != nil {
 		return err
 	}
 	after := fork.MustGetRoot()
@@ -44,13 +45,13 @@ func (n *Node) Op(ctx context.Context, code Operation_Code, params ...string) er
 		return err
 	}
 	switch code {
-	case Operation_CP:
+	case pb.Operation_CP:
 		return n.operator.Cp(ctx, before, after, params[0], params[1])
-	case Operation_MV:
+	case pb.Operation_MV:
 		return n.operator.Mv(ctx, before, after, params[0], params[1])
-	case Operation_RM:
+	case pb.Operation_RM:
 		return n.operator.Rm(ctx, before, after, params[0])
-	case Operation_MKDIR:
+	case pb.Operation_MKDIR:
 		return n.operator.MkDir(ctx, before, after, params[0])
 	default:
 		return errors.New("no matched operator")
@@ -109,7 +110,7 @@ func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, net *networ
 	}
 	s1 := grpc.NewServer()
 
-	RegisterFileOpServer(s1, FsOpServer{operator: NewLocalOperator(r, id)})
+	pb.RegisterFileOpServer(s1, FsOpServer{operator: NewLocalOperator(r, id)})
 	go s1.Serve(listener)
 	return node, err
 }

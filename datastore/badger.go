@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	dbState        = []byte("state")
+	dbStateKey     = []byte("state")
 	ErrKeyNotFound = errors.New("not found")
 )
 
@@ -63,11 +63,11 @@ func (s *BadgerDB) NewTransaction(update bool) Transaction {
 }
 
 func (s *BadgerDB) StoreState(hash string) error {
-	return s.Set(dbState, []byte(hash))
+	return s.Set(dbStateKey, []byte(hash))
 }
 
 func (s *BadgerDB) LoadState() (string, error) {
-	v, err := s.Get(dbState)
+	v, err := s.Get(dbStateKey)
 	if err != nil {
 		return "", err
 	}
@@ -101,4 +101,9 @@ type kv interface {
 type DataBase interface {
 	kv
 	NewTransaction(update bool) Transaction
+}
+
+type StateDB interface {
+	StoreState(hash string) error
+	LoadState() (string, error)
 }
