@@ -34,28 +34,28 @@ func Server2(node *consensus.Node, config Config) {
 			n, _ := node.Ls(c, op.Params[0])
 			c.JSON(200, n)
 		case "cp":
-			err := node.Op(c, pb.Operation_CP, op.Params[0], op.Params[1])
+			err := node.Op(c, pb.Instruction_CP, op.Params[0], op.Params[1])
 			if err != nil {
 				c.JSON(200, err.Error())
 			} else {
 				c.JSON(200, "success")
 			}
 		case "mv":
-			err := node.Op(c, pb.Operation_MV, op.Params[0], op.Params[1])
+			err := node.Op(c, pb.Instruction_MV, op.Params[0], op.Params[1])
 			if err != nil {
 				c.JSON(200, err.Error())
 			} else {
 				c.JSON(200, "success")
 			}
 		case "rm":
-			err := node.Op(c, pb.Operation_RM, op.Params[0])
+			err := node.Op(c, pb.Instruction_RM, op.Params[0])
 			if err != nil {
 				c.JSON(200, err.Error())
 			} else {
 				c.JSON(200, "success")
 			}
 		case "mkdir":
-			err := node.Op(c, pb.Operation_MKDIR, op.Params[0])
+			err := node.Op(c, pb.Instruction_MKDIR, op.Params[0])
 			if err != nil {
 				c.JSON(200, err.Error())
 			} else {

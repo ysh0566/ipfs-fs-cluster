@@ -2,18 +2,17 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
-	"github.com/ipfs/go-cid"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
-	"github.com/ipfs/go-mfs"
-	"github.com/ipfs/go-unixfs"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/state"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
 	"io"
-	"strings"
 )
+
+var ErrInconsistent = errors.New("inconsistent")
 
 type Fsm struct {
 	client       *httpapi.HttpApi
@@ -23,33 +22,13 @@ type Fsm struct {
 }
 
 func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
-	s, err := store.LoadState()
-	n, _ := api.Dag().Get()
-
-	state := &state.FileTreeState{
-		dag:   api.Dag(),
-		store: store,
-		ctx:   context.Background(),
-	}
+	_state, err := state.NewFileTreeState(store, api.Dag())
 	if err != nil {
-		if err != datastore.ErrKeyNotFound {
-			return nil, err
-		} else {
-			r, _ := mfs.NewRoot(context.Background(), api.Dag(), unixfs.EmptyDirNode(), func(ctx context.Context, cid cid.Cid) error {
-				return nil
-			})
-			state.root = r
-		}
-	} else {
-		err := state.Unmarshal(strings.NewReader(s))
-		if err != nil {
-			return nil, err
-		}
-		_ = state.EnsureStored()
+		return nil, err
 	}
 	return &Fsm{
 		client:       api,
-		State:        state,
+		State:        _state,
 		ctx:          context.Background(),
 		inconsistent: false,
 	}, nil
@@ -57,27 +36,25 @@ func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
 
 func (f *Fsm) Apply(log *raft.Log) interface{} {
 	var err error
-	if log.Index < f.State.index {
+	index := f.State.Index()
+	if log.Index < index {
 		f.inconsistent = true
-		return f.State
-	} else if log.Index == f.State.index {
+		return ErrInconsistent
+	} else if log.Index == index {
 		f.inconsistent = false
-		return f.State
+		return ErrInconsistent
 	}
-	op := &pb.Operation{}
-	if err = proto.Unmarshal(log.Data, op); err != nil {
+	inss := &pb.Instructions{}
+	if err = proto.Unmarshal(log.Data, inss); err != nil {
 		return err
 	}
-	err = f.State.RpcOp(f.ctx, op.Code, op.Params)
-	if err != nil {
-		return err
+	errs := make([]error, len(inss.Instruction))
+	for index, ins := range inss.Instruction {
+		errs[index] = f.State.Execute(ins)
 	}
-	if newRoot, err := f.State.Root(); err != nil && op.Ctx.Next == newRoot {
-		f.inconsistent = false
-	}
-	f.State.index = log.Index
+	f.State.SetIndex(log.Index)
 	_ = f.State.Flush()
-	return f.State
+	return errs
 }
 
 func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {

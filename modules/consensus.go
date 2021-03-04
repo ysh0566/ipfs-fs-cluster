@@ -92,7 +92,7 @@ func Raft(lc fx.Lifecycle, conf *raft.Config, fsm *consensus.Fsm, snaps raft.Sna
 	return r, nil
 }
 
-func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *network.Network) (*consensus.Node, error) {
+func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *network.Network, ipfs *httpapi.HttpApi) (*consensus.Node, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
 		OnStart: nil,
@@ -101,7 +101,7 @@ func Node(lc fx.Lifecycle, r *raft.Raft, fsm *consensus.Fsm, js Config, net *net
 			return nil
 		},
 	})
-	return consensus.NewNode(ctx, r, fsm, js.P2P.Identity.PeerID, net)
+	return consensus.NewNode(ctx, r, fsm, js.P2P.Identity.PeerID, net, ipfs)
 }
 
 //type Clients struct {
