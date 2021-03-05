@@ -9,7 +9,6 @@ import (
 	"github.com/ipfs/go-mfs"
 	gostream "github.com/libp2p/go-libp2p-gostream"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
-	"github.com/ysh0566/ipfs-fs-cluster/consensus/state"
 	"github.com/ysh0566/ipfs-fs-cluster/network"
 	"google.golang.org/grpc"
 	"strings"
@@ -18,7 +17,7 @@ import (
 )
 
 type Node struct {
-	raft       raftWapper
+	raft       preCommitter
 	fsm        *Fsm
 	retryTimes int
 	ID         string
@@ -109,7 +108,7 @@ func (n *Node) SwitchOperator() error {
 
 func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, net *network.Network, ipfs *httpapi.HttpApi) (*Node, error) {
 	node := &Node{
-		raft:       raftWapper{r},
+		raft:       preCommitter{r, fsm.State},
 		fsm:        fsm,
 		retryTimes: 3,
 		ID:         id,
@@ -124,7 +123,7 @@ func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, net *networ
 	if err != nil {
 		return nil, err
 	}
-	packer := state.NewPacker(node.raft, time.Millisecond*500, 100)
+	packer := NewPacker(node.raft, time.Millisecond*500, 100)
 	node.packer = packer
 	s1 := grpc.NewServer()
 

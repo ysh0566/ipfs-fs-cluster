@@ -6,6 +6,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/hashicorp/raft"
 	httpapi "github.com/ipfs/go-ipfs-http-client"
+	"github.com/ipfs/go-log/v2"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/state"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore"
@@ -13,6 +14,12 @@ import (
 )
 
 var ErrInconsistent = errors.New("inconsistent")
+
+var logger = log.Logger("fsm")
+
+func init() {
+	log.SetLogLevel("fsm", "debug")
+}
 
 type Fsm struct {
 	client       *httpapi.HttpApi
@@ -35,6 +42,9 @@ func NewFsm(store *datastore.BadgerDB, api *httpapi.HttpApi) (*Fsm, error) {
 }
 
 func (f *Fsm) Apply(log *raft.Log) interface{} {
+	if log.Type != raft.LogCommand {
+		return nil
+	}
 	var err error
 	index := f.State.Index()
 	if log.Index < index {
@@ -48,13 +58,43 @@ func (f *Fsm) Apply(log *raft.Log) interface{} {
 	if err = proto.Unmarshal(log.Data, inss); err != nil {
 		return err
 	}
-	errs := make([]error, len(inss.Instruction))
-	for index, ins := range inss.Instruction {
-		errs[index] = f.State.Execute(ins)
+	commitFunction := func(insList []*pb.Instruction) error {
+		for _, ins := range insList {
+			if err := f.State.Execute(ins); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	f.State.SetIndex(log.Index)
-	_ = f.State.Flush()
-	return errs
+	snapshot := f.State.Lock()
+	var leader bool
+	for {
+		var err error
+		if f.State.MustGetRoot() == inss.Ctx.Next {
+			leader = true
+
+		} else {
+			err = commitFunction(inss.Instruction)
+			if err != nil {
+				f.State.MustRollBack(snapshot)
+				continue
+			}
+		}
+
+		f.State.SetIndex(log.Index)
+		for {
+			if err := f.State.Flush(); err == nil {
+				break
+			}
+		}
+		break
+	}
+	after := f.State.UnLock()
+	if (snapshot.Root != inss.Ctx.Pre && !leader) || after.Root != inss.Ctx.Next {
+		logger.Warnf("inconsistent: want: %s->%s, got %s->%s", inss.Ctx.Pre, inss.Ctx.Next, snapshot.Root, after.Root)
+		//_ = f.State.Unmarshal(strings.NewReader(inss.Ctx.Next))
+	}
+	return nil
 }
 
 func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {

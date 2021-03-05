@@ -1,4 +1,4 @@
-package state
+package consensus
 
 import (
 	"errors"

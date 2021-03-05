@@ -19,18 +19,20 @@ import (
 	gopath "path"
 	"strings"
 	"sync"
+	"time"
 )
 
 var ErrParamsNum = errors.New("params num error")
 
 type FileTreeState struct {
-	dag   format.DAGService
-	root  *mfs.Root
-	store datastore.StateDB
-	ctx   context.Context
-	copy  *FileTreeState
-	once  sync.Once
-	index uint64
+	dag         format.DAGService
+	root        *mfs.Root
+	store       datastore.StateDB
+	ctx         context.Context
+	once        sync.Once
+	index       uint64
+	mtx         sync.Mutex
+	PreExecuted bool
 }
 
 func (fs *FileTreeState) Execute(ins *pb.Instruction) error {
@@ -130,7 +132,7 @@ func (fs *FileTreeState) Mkdir(params ...string) error {
 	}
 	return mfs.Mkdir(fs.root, src, mfs.MkdirOpts{
 		Mkparents:  true,
-		Flush:      true,
+		Flush:      false,
 		CidBuilder: fs.root.GetDirectory().GetCidBuilder(),
 	})
 }
@@ -175,11 +177,14 @@ func (fs *FileTreeState) Root() (string, error) {
 }
 
 func (fs *FileTreeState) MustGetRoot() string {
-	n, err := fs.root.GetDirectory().GetNode()
-	if err != nil {
-		panic(err)
+	for {
+		n, err := fs.root.GetDirectory().GetNode()
+		if err != nil {
+			time.Sleep(time.Millisecond * 20)
+			continue
+		}
+		return n.Cid().String()
 	}
-	return n.Cid().String()
 }
 
 func (fts *FileTreeState) Marshal(writer io.Writer) error {
@@ -188,10 +193,7 @@ func (fts *FileTreeState) Marshal(writer io.Writer) error {
 }
 
 func (fts *FileTreeState) String() string {
-	d := struct {
-		Index uint64 `json:"index"`
-		Root  string `json:"root"`
-	}{
+	d := SnapShot{
 		Index: fts.index,
 		Root:  fts.MustGetRoot(),
 	}
@@ -199,33 +201,45 @@ func (fts *FileTreeState) String() string {
 	return string(data)
 }
 
-func (fts *FileTreeState) Copy(ctx context.Context) (*FileTreeState, error) {
-	var err error
-	fts.once.Do(func() {
-		var raw format.Node
-		var root *mfs.Root
-		raw, err = fts.root.GetDirectory().GetNode()
-		if err != nil {
+func (fts *FileTreeState) Lock() SnapShot {
+	fts.mtx.Lock()
+	ss := SnapShot{
+		Index: fts.index,
+		Root:  fts.MustGetRoot(),
+	}
+	return ss
+}
+
+func (fts *FileTreeState) UnLock() SnapShot {
+	ss := SnapShot{
+		Index: fts.index,
+		Root:  fts.MustGetRoot(),
+	}
+	fts.mtx.Unlock()
+	return ss
+}
+
+func (fts *FileTreeState) RollBack(ss SnapShot) error {
+	fts.mtx.Lock()
+	defer fts.mtx.Unlock()
+	if fts.index > ss.Index {
+		return nil
+	}
+	return fts.Unmarshal(strings.NewReader(ss.String()))
+}
+
+func (fts *FileTreeState) MustRollBack(ss SnapShot) {
+	fts.mtx.Lock()
+	defer fts.mtx.Unlock()
+	for {
+		if fts.index > ss.Index {
 			return
 		}
-		node, ok := raw.(*merkledag.ProtoNode)
-		if !ok {
-			panic(err)
+		if err := fts.Unmarshal(strings.NewReader(ss.String())); err != nil {
+			time.Sleep(time.Millisecond * 20)
+			continue
 		}
-		root, err = mfs.NewRoot(ctx, fts.dag, node, func(ctx context.Context, cid cid.Cid) error {
-			return nil
-		})
-		fts.copy = &FileTreeState{
-			dag:   fts.dag,
-			root:  root,
-			store: fts.store,
-			ctx:   ctx,
-		}
-	})
-	if err != nil {
-		return nil, err
 	}
-	return fts.copy, nil
 }
 
 func (fts *FileTreeState) Index() uint64 {
@@ -236,7 +250,7 @@ func (fts *FileTreeState) SetIndex(idx uint64) {
 	fts.index = idx
 }
 
-func WalkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]bool) error {
+func walkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]bool) error {
 	ls, err := dir.List(ctx)
 	if err != nil {
 		return err
@@ -256,7 +270,7 @@ func WalkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]b
 			}
 		}
 		if node.Type() == mfs.TDir {
-			err = WalkDirectory(ctx, node.(*mfs.Directory), visited)
+			err = walkDirectory(ctx, node.(*mfs.Directory), visited)
 			if err != nil {
 				return err
 			}
@@ -268,7 +282,7 @@ func WalkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]b
 
 func (fts *FileTreeState) EnsureStored() error {
 	visited := make(map[string]bool)
-	return WalkDirectory(fts.ctx, fts.root.GetDirectory(), visited)
+	return walkDirectory(fts.ctx, fts.root.GetDirectory(), visited)
 }
 
 func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
@@ -360,4 +374,14 @@ func getParentDir(root *mfs.Root, dir string) (*mfs.Directory, error) {
 		return nil, errors.New("expected *mfs.Directory, didn't get it. This is likely a race condition")
 	}
 	return pdir, nil
+}
+
+type SnapShot struct {
+	Index uint64 `json:"index"`
+	Root  string `json:"root"`
+}
+
+func (ss SnapShot) String() string {
+	data, _ := json.Marshal(ss)
+	return string(data)
 }

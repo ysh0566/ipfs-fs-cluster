@@ -3,7 +3,7 @@ package datastore
 import (
 	"encoding/binary"
 	"github.com/hashicorp/raft"
-	"github.com/prometheus/common/log"
+	"github.com/ipfs/go-log/v2"
 	"github.com/ysh0566/ipfs-fs-cluster/datastore/pb"
 )
 
@@ -11,6 +11,8 @@ var (
 	dbLogsFirstIndex = []byte("l_first")
 	dbLogsLastIndex  = []byte("l_last")
 )
+
+var logger = log.Logger("db")
 
 type LogDB struct {
 	db DataBase
@@ -41,6 +43,7 @@ func (l LogDB) LastIndex() (uint64, error) {
 }
 
 func (l LogDB) GetLog(index uint64, log *raft.Log) error {
+	logger.Infof("get log : %d", index)
 	if bs, err := l.db.Get(l.uint64Key(index)); err == nil {
 		return pb.DecodeLog(bs, log)
 	} else {
@@ -82,7 +85,9 @@ func (l LogDB) StoreLogs(logs []*raft.Log) error {
 		if err != nil {
 			return err
 		}
-		if err := tx.Set(key, bs); err != nil {
+		tmp := make([]byte, 9)
+		copy(tmp, key)
+		if err := tx.Set(tmp, bs); err != nil {
 			return err
 		}
 		if logObj.Index > max {
@@ -98,7 +103,7 @@ func (l LogDB) StoreLogs(logs []*raft.Log) error {
 }
 
 func (l LogDB) DeleteRange(min, max uint64) error {
-	log.Info("DeleteRange", min, max)
+	logger.Infof("DeleteRange: %d-%d", min, max)
 	tx := l.db.NewTransaction(true)
 	defer tx.Discard()
 	key := make([]byte, 9)
@@ -113,7 +118,9 @@ func (l LogDB) DeleteRange(min, max uint64) error {
 	}
 	for i := min; i <= max; i++ {
 		binary.LittleEndian.PutUint64(key[1:], i)
-		if err := tx.Delete(key); err != nil && err != ErrKeyNotFound {
+		tmp := make([]byte, 9)
+		copy(tmp, key)
+		if err := tx.Delete(tmp); err != nil && err != ErrKeyNotFound {
 			return err
 		}
 	}
@@ -129,11 +136,15 @@ func (l LogDB) DeleteRange(min, max uint64) error {
 	}
 	key = make([]byte, 8, 8)
 	binary.LittleEndian.PutUint64(key, lowIndex)
-	if err := tx.Set(dbLogsFirstIndex, key); err != nil {
+	tmp := make([]byte, 9)
+	copy(tmp, key)
+	if err := tx.Set(dbLogsFirstIndex, tmp); err != nil {
 		return err
 	}
 	binary.LittleEndian.PutUint64(key, highIndex)
-	if err := tx.Set(dbLogsLastIndex, key); err != nil {
+	tmp2 := make([]byte, 9)
+	copy(tmp2, key)
+	if err := tx.Set(dbLogsLastIndex, tmp2); err != nil {
 		return err
 	}
 	return tx.Commit()

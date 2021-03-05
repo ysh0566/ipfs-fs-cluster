@@ -14,22 +14,36 @@ import (
 func main() {
 
 	group := sync.WaitGroup{}
-	for i := 0; i < 10; i++ {
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < 1000000; i++ {
+		time.Sleep(time.Second / 10)
 		group.Add(1)
 		go func() {
-			time.Sleep(time.Second / 1000)
 			defer group.Done()
 			params := struct {
 				Op     string   `json:"op"`
 				Params []string `json:"params"`
 			}{}
 			params.Op = "cp"
-			params.Params = []string{randomString(9), "QmayKQWJgWmr46DqWseADyUanmqxh662hPNdAkdHRjiQQH"}
+			s := randomString(5)
+			params.Params = []string{s, "QmayKQWJgWmr46DqWseADyUanmqxh662hPNdAkdHRjiQQH"}
 			bs, _ := json.Marshal(params)
-			res, err := http.Post("http://127.0.0.1:10087/fs", "application/json", bytes.NewReader(bs))
+
+			req, err := http.NewRequest("POST", "http://127.0.0.1:10087/fs", bytes.NewReader(bs))
+			if err != nil {
+				fmt.Println(err.Error())
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Close = true
+			now := time.Now()
+			res, err := http.DefaultClient.Do(req)
 			if err == nil {
 				bs, _ = ioutil.ReadAll(res.Body)
-				fmt.Println(string(bs))
+				after := time.Now()
+				fmt.Println(string(bs), after.Sub(now).String())
+			} else {
+				fmt.Println(err.Error())
 			}
 		}()
 	}
