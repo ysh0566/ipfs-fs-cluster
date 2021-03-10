@@ -123,7 +123,7 @@ func NewNode(ctx context.Context, r *raft.Raft, fsm *Fsm, id string, net *networ
 	if err != nil {
 		return nil, err
 	}
-	packer := NewPacker(node.raft, time.Millisecond*500, 100)
+	packer := NewPacker(node.raft, time.Millisecond*300, 100)
 	node.packer = packer
 	s1 := grpc.NewServer()
 

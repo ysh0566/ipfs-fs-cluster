@@ -31,9 +31,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/multiformats/go-multibase v0.0.3
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/common v0.6.0
-	github.com/sigurn/utils v0.0.0-20190728110027-e1fefb11a144
 	go.uber.org/fx v1.13.1
 	google.golang.org/grpc v1.32.0
-	google.golang.org/protobuf v1.25.0
+	google.golang.org/protobuf v1.25.0 // indirect
 )

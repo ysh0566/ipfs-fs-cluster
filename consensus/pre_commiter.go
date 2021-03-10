@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/pb"
 	"github.com/ysh0566/ipfs-fs-cluster/consensus/state"
+	"time"
 )
 
 type Executor interface {
@@ -18,6 +19,7 @@ type OnlyOneCanDo interface {
 	Lock() state.SnapShot
 	Execute(ins *pb.Instruction) error
 	UnLock() state.SnapShot
+	SnapShot() state.SnapShot
 	RollBack(shot state.SnapShot) error
 }
 
@@ -37,6 +39,9 @@ func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 		}
 	}
 	after := r.preExecutor.UnLock()
+	for r.preExecutor.RollBack(snapshot) != nil {
+		time.Sleep(time.Second)
+	}
 	inss := pb.Instructions{
 		Instruction: copyIns,
 		Ctx: &pb.Ctx{
@@ -55,7 +60,6 @@ func (r preCommitter) Call(instructions []*pb.Instruction) []error {
 	}
 	switch res := future.Response().(type) {
 	case error:
-		_ = r.preExecutor.RollBack(snapshot)
 		return CopyError(res, len(instructions))
 	default:
 		return errs

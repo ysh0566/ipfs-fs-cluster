@@ -19,6 +19,7 @@ import (
 	gopath "path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -194,7 +195,7 @@ func (fts *FileTreeState) Marshal(writer io.Writer) error {
 
 func (fts *FileTreeState) String() string {
 	d := SnapShot{
-		Index: fts.index,
+		Index: fts.Index(),
 		Root:  fts.MustGetRoot(),
 	}
 	data, _ := json.Marshal(d)
@@ -204,7 +205,7 @@ func (fts *FileTreeState) String() string {
 func (fts *FileTreeState) Lock() SnapShot {
 	fts.mtx.Lock()
 	ss := SnapShot{
-		Index: fts.index,
+		Index: fts.Index(),
 		Root:  fts.MustGetRoot(),
 	}
 	return ss
@@ -212,17 +213,25 @@ func (fts *FileTreeState) Lock() SnapShot {
 
 func (fts *FileTreeState) UnLock() SnapShot {
 	ss := SnapShot{
-		Index: fts.index,
+		Index: fts.Index(),
 		Root:  fts.MustGetRoot(),
 	}
 	fts.mtx.Unlock()
 	return ss
 }
 
+func (fts *FileTreeState) SnapShot() SnapShot {
+	ss := SnapShot{
+		Index: fts.Index(),
+		Root:  fts.MustGetRoot(),
+	}
+	return ss
+}
+
 func (fts *FileTreeState) RollBack(ss SnapShot) error {
 	fts.mtx.Lock()
 	defer fts.mtx.Unlock()
-	if fts.index > ss.Index {
+	if fts.Index() > ss.Index {
 		return nil
 	}
 	return fts.Unmarshal(strings.NewReader(ss.String()))
@@ -232,7 +241,7 @@ func (fts *FileTreeState) MustRollBack(ss SnapShot) {
 	fts.mtx.Lock()
 	defer fts.mtx.Unlock()
 	for {
-		if fts.index > ss.Index {
+		if fts.Index() > ss.Index {
 			return
 		}
 		if err := fts.Unmarshal(strings.NewReader(ss.String())); err != nil {
@@ -243,11 +252,11 @@ func (fts *FileTreeState) MustRollBack(ss SnapShot) {
 }
 
 func (fts *FileTreeState) Index() uint64 {
-	return fts.index
+	return atomic.LoadUint64(&fts.index)
 }
 
 func (fts *FileTreeState) SetIndex(idx uint64) {
-	fts.index = idx
+	atomic.StoreUint64(&fts.index, idx)
 }
 
 func walkDirectory(ctx context.Context, dir *mfs.Directory, visited map[string]bool) error {
@@ -317,7 +326,7 @@ func (fts *FileTreeState) Unmarshal(reader io.Reader) error {
 		return err
 	}
 	fts.root = r
-	fts.index = state.Index
+	fts.SetIndex(state.Index)
 	return nil
 }
 
